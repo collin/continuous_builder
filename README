@@ -1,0 +1,29 @@
+## bon! <<<<<<<<<<<<<<<<<<< 
+
+Let's do builders :D
+
+Class > ContinuousBuilder 
+
+#(hey, why isn't that ruby syntax)
+
+The a simple builder.
+
+  class HamlBuilder < ContinuousBuilder
+    builds Haml, 
+      :files   => "#{FixtureRoot}/**/*.haml",
+      :context => Object
+  end
+
+methods(:build) expects the first argument to be a Module.
+
+This module should have an Engine class.
+
+Engine::new should take a string argument representing the source.
+Engine#render should take an optional Object to be the building context.
+
+Great. There will be more as it's needed.
+
+# Collin Miller claims copyright
+# He denies responsibility!
+# Any use expressly allowed by humans
+# Moonlings and Martians pay extra.
