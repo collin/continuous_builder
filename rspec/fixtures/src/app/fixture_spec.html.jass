@@ -1,0 +1,6 @@
+describe Magic Machine
+  it casts a spell
+    expect(MagicMagine).should_have('spellCasting');
+      
+  it has moving parts
+    expect(MagicMachine).should_have('movingParts');
