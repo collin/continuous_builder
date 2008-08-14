@@ -30,7 +30,7 @@ end
 
 namespace :gem do
   task :version do
-    @version = "0.0.1"
+    @version = "0.0.2"
   end
 
   task :build => :spec do

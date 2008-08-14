@@ -1,3 +1,5 @@
+require 'pp'
+
 class ContinuousBuilder
   SrcRegex=  /src/
   BuildDirectory= "build"
@@ -7,96 +9,134 @@ class ContinuousBuilder
   }
 
   class << self
-    def inherited klass
-      klass.const_set :Builders, {}
+
+    def watches id, config
+      self.watchers[id] = config
+      self.after_editing id, *config[:update] if config[:update]
     end
 
-    def builds builder_module=Module, options={}
-      options = DefaultOptions.merge(options)
-      self::Builders[builder_module.name.to_sym] = options
+    def after_editing watch_id, method
+      after_editing_callbacks[watch_id] ||= []
+      after_editing_callbacks[watch_id] << method
+    end
+
+    def after_editing_callbacks
+      @after_editing_callbacks ||= {}
+    end
+
+    def watchers
+      @watchers ||= {}
     end
   end
 
-  def files
-    self.class::Builders.inject({}) do |hash, builder|
-      module_name = builder.first
-      hash[module_name] = Dir.glob builder.last[:files]
+  def watched_files
+    self.class.watchers.inject({}) do |hash, pair|
+      watch_id = pair.first
+      hash[watch_id] = Dir.glob pair.last[:files]
       hash
     end
   end
-  
-  def files_flattened
-    files.map{|pair| pair.last}.flatten
+
+  def watched_files_flattened
+    watched_files.map{|pair| pair.last}.flatten
   end
 
-  def mtimes
-    files_flattened.inject({}) do |hash, filename|
+  def watched_mtimes
+    watched_files_flattened.inject({}) do |hash, filename|
       hash[filename] = File.stat(filename).mtime
       hash
     end
   end
 
-  def cache_mtimes!
-    @cached_mtimes = mtimes
+  def cache_watched_mtimes!
+    @cached_watched_mtimes = watched_mtimes
   end
 
-  def cached_mtimes
-    @cached_mtimes
+  def cached_watched_mtimes
+    @cached_watched_mtimes||= {}
   end
 
-  def modified_files
-    files.inject({}) do |hash, pair|
+  def modified_watched_files
+    watched_files.inject({}) do |hash, pair|
       hash[pair.first] = pair.last.select do |file|
-        File.stat(file).mtime.to_i > cached_mtimes[file].to_i
+        File.stat(file).mtime.to_i > cached_watched_mtimes[file].to_i
       end
       hash
     end 
   end
 
   def build_continuously loop=true
-    cache_mtimes!
+    cache_watched_mtimes!
     begin
-      build
+      watch
       sleep 1 if loop
     end while loop
   end
-  
-  def build files=modified_files
-    self.class::Builders.each do |module_name, options|
-      build_files files[module_name], module_name, options
+
+  def watch files=modified_watched_files
+    self.class.watchers.each do |watch_id, glob_string|
+      act_on_edited_files watch_id, files[watch_id]
     end
   end
 
   def build_all
-    build files
-  end    
+    watch watched_files
+  end
 
-  def build_files paths, module_name, options
-    builder = Object.const_get(module_name)
+  def exec_after_editing_callbacks watch_id, path
+    callbacks = self.class.after_editing_callbacks[watch_id]
+    callbacks.each do |method|
+      self.send method, path
+    end unless callbacks.nil? 
+  end
+
+  def build_with_module_and_return_path watch_id, path
+    config =  self.class.watchers[watch_id]
+    if config[:module]
+      rendered = render_build path, config 
+      build_path = build_path_for(path)
+      File.open(build_path, 'w'){|f| f.write(rendered)}
+      build_path
+    else
+      path
+    end
+  end
+
+  def act_on_edited_files watch_id, paths
     for path in paths
-      file = File.new build_path_for(path), 'w'
-
-      p "building: #{path}"
-      p "as:       #{file.path}"
-      p ""
-      
+      print_edited_notice path
       begin
-        src = File.read(path)
-        engine = builder::Engine.new(src)
-
-        cached_mtimes[path] = Time.now
-
-        rendered = engine.render options[:context]
-        file.write(rendered)
-        file.close
-      rescue Exception => e
-        p "failed to build because:"
-        p e.inspect
-        p ""
+        update_watched_mtime_cache path
+        path = build_with_module_and_return_path watch_id, path
+        exec_after_editing_callbacks watch_id, path
+      rescue Exception => exception
+        print_after_editing_failure_notice exception
       end
     end
   end
+
+  def render_build path, config
+    src = File.read(path)
+    engine = config[:module]::Engine.new(src)
+    engine.render config[:context] 
+  end
+
+  def update_watched_mtime_cache path
+    cached_watched_mtimes[path] = Time.now
+  end
   
+  def print_edited_notice path
+    puts "edited: #{path}"
+    puts ""
+  end
+
+  def print_after_editing_failure_notice exception
+    puts "callbacks failed because:"
+    puts "    #{exception.inspect}"
+    puts "    " << exception.backtrace.join("\n    ")
+    puts ""
+  end
+
   def ensure_build_path! path
     FileUtils.mkdir_p path
   end
@@ -105,6 +145,8 @@ class ContinuousBuilder
     dir= File.dirname(src_path).gsub(self.class::SrcRegex, self.class::BuildDirectory)
     bits= File.basename(src_path).split('.')
     name= bits.reject{|bit|bit == bits.last}.join('.')
+
+    dir.gsub!("/#{bits.last}", "")
 
     ensure_build_path! dir
     "#{dir}/#{name}"

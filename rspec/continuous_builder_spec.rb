@@ -10,6 +10,11 @@ def modify_file! file="#{FixtureRoot}/src/app/layout.html.haml"
   command = File.utime(stamp, stamp, file)
 end
 
+class Context
+  def self.render *args
+  end
+end
+
 describe modify_file! do
   it "sends a file into the future" do
     file = "#{FixtureRoot}/src/app/layout.html.haml"
@@ -32,7 +37,16 @@ describe ContinuousBuilder do
   class HamlBuilder < ContinuousBuilder
     builds Haml, 
       :files   => "#{FixtureRoot}/**/*.haml",
-      :context => Object
+      :context => Context
+
+    watches :javascripts, "#{FixtureRoot}/**/*.js"
+    
+    after_building Haml, :callback
+    after_editing :javascripts, :callback
+
+    def callback file
+
+    end
   end
 
   before(:each) {@builder = HamlBuilder.new}
@@ -40,15 +54,39 @@ describe ContinuousBuilder do
   describe '.inherited' do
     it "sets Builders constant" do
       Klass = Class.new ContinuousBuilder
-      Klass::Builders.should be_empty
+      Klass.builders.should be_empty
     end
   end
 
   describe '.builds' do
-    it "adds to Builders" do
+    it "adds to @builders" do
       FauxBuilder = Class.new ContinuousBuilder
       FauxBuilder.builds Haml
-      FauxBuilder::Builders.should_not be_empty
+      FauxBuilder.builders.should_not be_empty
+    end
+  end
+  
+  describe '.watches' do
+    it "adds to @watchers" do
+      FauxBuilder = Class.new ContinuousBuilder
+      FauxBuilder.watches :something, "filez"
+      FauxBuilder.watchers.should include(:something)
+    end
+  end
+
+  describe '.after_building' do
+    it "adds to @after_building_callbacks" do
+      FauxBuilder = Class.new ContinuousBuilder
+      FauxBuilder.after_building Haml, :take_a_nap
+      FauxBuilder.after_building_callbacks[:Haml].should include(:take_a_nap)
+    end
+  end
+
+  describe '.after_editing' do
+    it "adds to @afters_editing_callabkcs" do
+      FauxBuilder = Class.new ContinuousBuilder
+      FauxBuilder.after_editing :something, :take_a_nap
+      FauxBuilder.after_editing_callbacks[:something].should include(:take_a_nap)
     end
   end
 
@@ -72,16 +110,21 @@ describe ContinuousBuilder do
   describe "#build_files" do
     before(:each) do
       @builder.cache_mtimes!
+      @src= Dir.glob "#{FixtureRoot}/src/app/*.html.haml"
+      @build_glob= "#{FixtureRoot}/build/app/*.html"
+      build= Dir.glob @build_glob
+      FileUtils.rm build, :force => true
     end
 
     it "renders html documents" do
-      src= Dir.glob "#{FixtureRoot}/src/app/*.html.haml"
-      build_glob= "#{FixtureRoot}/build/app/*.html"
-      build= Dir.glob build_glob
-      FileUtils.rm build, :force => true
+      @builder.build_files(@builder.files[:Haml], :Haml, {:context => Context})
+      Dir.glob(@build_glob).length.should == @src.length
+    end
 
-      @builder.build_files(@builder.files[:Haml], :Haml, {:context => Object})
-      Dir.glob(build_glob).length.should == src.length
+    it "runs callbacks" do
+      path = @builder.build_path_for @builder.files[:Haml].first
+      @builder.should_receive(:callback).with(path)
+      @builder.build_files([@builder.files[:Haml].first], :Haml, {:context => Context})
     end
   end
 
