@@ -1,8 +1,6 @@
 require 'pp'
 
 class ContinuousBuilder
-  SrcRegex=  /src/
-  BuildDirectory= "build"
   DefaultOptions= {
     :files   => "!no_match",
     :context => Object
@@ -86,6 +84,7 @@ class ContinuousBuilder
   def exec_after_editing_callbacks watch_id, path
     callbacks = self.class.after_editing_callbacks[watch_id]
     callbacks.each do |method|
+      print_callback_notice method
       self.send method, path
     end unless callbacks.nil? 
   end
@@ -104,7 +103,7 @@ class ContinuousBuilder
 
   def act_on_edited_files watch_id, paths
     for path in paths
-      print_edited_notice path
+      print_edited_notice watch_id, path
       begin
         update_watched_mtime_cache path
         path = build_with_module_and_return_path watch_id, path
@@ -124,9 +123,14 @@ class ContinuousBuilder
   def update_watched_mtime_cache path
     cached_watched_mtimes[path] = Time.now
   end
-  
-  def print_edited_notice path
-    puts "edited: #{path}"
+
+  def print_callback_notice method
+    puts "    callback: #{method}"
+    puts ""
+  end
+
+  def print_edited_notice watch_id, path
+    puts "edited: #{path} #{watch_id}"
     puts ""
   end
 
@@ -142,7 +146,7 @@ class ContinuousBuilder
   end
   
   def build_path_for src_path
-    dir= File.dirname(src_path).gsub(self.class::SrcRegex, self.class::BuildDirectory)
+    dir= File.dirname(src_path)
     bits= File.basename(src_path).split('.')
     name= bits.reject{|bit|bit == bits.last}.join('.')
 
