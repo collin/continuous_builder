@@ -1,5 +1,9 @@
 require 'pp'
 require 'colored'
+require 'johnson'
+require 'pathname'
+
+__DIR__ = Pathname.new(__FILE__).dirname
 
 class ContinuousBuilder
   DefaultOptions= {
@@ -28,10 +32,18 @@ class ContinuousBuilder
     end
   end
 
+  def initialize
+    super
+    @runtime = Johnson::Runtime.new
+    @runtime.load(__DIR__ + '/../vendor/diff_match_patch.js')
+    @runtime.evaluate "var dmp = new diff_match_patch();"
+    @dmp = @runtime[:dmp]
+  end
+
   def watched_files
     self.class.watchers.inject({}) do |hash, pair|
       watch_id = pair.first
-      hash[watch_id] = Dir.glob pair.last[:files]
+      hash[watch_id] = Pathname.glob pair.last[:files]
       hash
     end
   end
@@ -45,6 +57,21 @@ class ContinuousBuilder
       hash[filename] = File.stat(filename).mtime
       hash
     end
+  end
+  
+  def contents
+    watched_files_flattened.inject({}) do |hash, filename|
+      hash[filename.to_s] = filename.read      
+      hash
+    end
+  end
+  
+  def cache_content!
+    @cached_contents = contents
+  end
+  
+  def cached_contents
+    @cached_contents||= {}
   end
 
   def cache_watched_mtimes!
@@ -66,6 +93,7 @@ class ContinuousBuilder
 
   def build_continuously loop=true
     cache_watched_mtimes!
+    cache_content!
     begin
       watch
       sleep 1 if loop
@@ -107,6 +135,7 @@ class ContinuousBuilder
       print_edited_notice watch_id, path
       begin
         update_watched_mtime_cache path
+        update_content_cache path
         path = build_with_module_and_return_path watch_id, path
         exec_after_editing_callbacks watch_id, path
       rescue Exception => exception
@@ -125,13 +154,36 @@ class ContinuousBuilder
     cached_watched_mtimes[path] = Time.now
   end
 
+  def update_content_cache path
+    cached_contents[path.to_s] = path.read
+  end
+
   def print_callback_notice method
-    puts "    callback:".orange +" #{method}"
+    puts "    callback: #{method.to_s.yellow}"
     puts ""
   end
 
   def print_edited_notice watch_id, path
-    puts "edited: #{path.green} #{watch_id.to_s.green}"
+    puts "edited: #{path.to_s.green} #{watch_id}"
+    if cached_contents[path.to_s]
+      patch = @dmp.patch_make cached_contents[path.to_s], path.read
+      puts ""
+      diff = @dmp.patch_toText(patch).split("\n").map do |line|
+        line = if line.match /^@@.*@@$/
+          line.bold
+        elsif line.match /^[ ]*\-.*$/
+          line.red
+        elsif line.match /^[ ]*\+.*$/
+          line.green
+        else
+          ""
+        end
+        "\n    #{line}" unless line.match /^[\s]*$/
+      end.join("").gsub(/((?:%[0-9a-fA-F]{2})+)/n) do
+          [$1.delete('%')].pack('H*')
+        end
+      puts diff
+    end
     puts ""
   end
 
@@ -140,7 +192,7 @@ class ContinuousBuilder
     puts "    #{exception.inspect}".bold
     puts "    " << exception.backtrace.join("\n    ")
     puts ""
-  end
+  end 
 
   def ensure_build_path! path
     FileUtils.mkdir_p path

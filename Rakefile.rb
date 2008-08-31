@@ -58,7 +58,7 @@ Gem::Specification.new do |s|
   s.authors          = ["Collin Miller"]
   s.email            = "collintmiller@gmail.com"
   s.homepage         = "http://github.com/collin/jass"
-  s.files            = %w{#{(%w(README Rakefile.rb) + Dir.glob("{lib,rspec}/**/*")).join(' ')}}
+  s.files            = %w{#{(%w(README Rakefile.rb) + Dir.glob("{lib,rspec,vendor}/**/*")).join(' ')}}
   
   s.add_dependency  "rake"
   s.add_dependency  "rspec"
