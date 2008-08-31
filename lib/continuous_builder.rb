@@ -1,4 +1,5 @@
 require 'pp'
+require 'colored'
 
 class ContinuousBuilder
   DefaultOptions= {
@@ -125,18 +126,18 @@ class ContinuousBuilder
   end
 
   def print_callback_notice method
-    puts "    callback: #{method}"
+    puts "    callback:".orange +" #{method}"
     puts ""
   end
 
   def print_edited_notice watch_id, path
-    puts "edited: #{path} #{watch_id}"
+    puts "edited: #{path.green} #{watch_id.to_s.green}"
     puts ""
   end
 
   def print_after_editing_failure_notice exception
-    puts "callbacks failed because:"
-    puts "    #{exception.inspect}"
+    puts "callbacks failed because:".red
+    puts "    #{exception.inspect}".bold
     puts "    " << exception.backtrace.join("\n    ")
     puts ""
   end
