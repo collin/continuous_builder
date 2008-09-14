@@ -1,11 +1,10 @@
-require 'pp'
 require 'colored'
 require 'johnson'
 require 'pathname'
 
-__DIR__ = Pathname.new(__FILE__).dirname
-
 class ContinuousBuilder
+  __DIR__ = Pathname.new(__FILE__).dirname
+
   DefaultOptions= {
     :files   => "!no_match",
     :context => Object
