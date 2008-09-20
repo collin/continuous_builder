@@ -3,7 +3,7 @@ require 'johnson'
 require 'pathname'
 
 class ContinuousBuilder
-  __DIR__ = Pathname.new(__FILE__).dirname
+  DIR = Pathname.new(__FILE__).dirname
 
   DefaultOptions= {
     :files   => "!no_match",
@@ -34,7 +34,7 @@ class ContinuousBuilder
   def initialize
     super
     @runtime = Johnson::Runtime.new
-    @runtime.load(__DIR__ + '/../vendor/diff_match_patch.js')
+    @runtime.load(DIR + '../vendor/diff_match_patch.js')
     @runtime.evaluate "var dmp = new diff_match_patch();"
     @dmp = @runtime[:dmp]
   end
@@ -109,7 +109,7 @@ class ContinuousBuilder
     watch watched_files
   end
 
-  def exec_after_editing_callbacks watch_id, path
+  def exec_after_editing_callbacks watch_id, path=false
     callbacks = self.class.after_editing_callbacks[watch_id]
     callbacks.each do |method|
       print_callback_notice method
@@ -130,23 +130,34 @@ class ContinuousBuilder
   end
 
   def act_on_edited_files watch_id, paths
+    config = self.class.watchers[watch_id]
     for path in paths
       print_edited_notice watch_id, path
       begin
         update_watched_mtime_cache path
         update_content_cache path
         path = build_with_module_and_return_path watch_id, path
-        exec_after_editing_callbacks watch_id, path
+        exec_after_editing_callbacks watch_id, path unless config[:wait_for_all_edits]
       rescue Exception => exception
         print_after_editing_failure_notice exception
       end
     end
+    exec_after_editing_callbacks watch_id if config[:wait_for_all_edits] unless paths.length == 0
   end
 
   def render_build path, config
     src = File.read(path)
-    engine = config[:module]::Engine.new(src)
-    engine.render config[:context] 
+    render_method ="render_#{config[:module]}".downcase.to_sym
+    if self.respond_to?(render_method)
+      self.send(render_method, src, config)
+    else
+      engine = config[:module]::Engine.new(src)
+      engine.render config[:context] 
+    end
+  end
+  
+  def render_sass source, config
+    Sass::Engine.new(source, config).render
   end
 
   def update_watched_mtime_cache path
