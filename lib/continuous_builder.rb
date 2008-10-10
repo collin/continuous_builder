@@ -149,15 +149,20 @@ class ContinuousBuilder
     src = File.read(path)
     render_method ="render_#{config[:module]}".downcase.to_sym
     if self.respond_to?(render_method)
-      self.send(render_method, src, config)
+      self.send(render_method, src, path, config)
     else
       engine = config[:module]::Engine.new(src)
       engine.render config[:context] 
     end
   end
   
-  def render_sass source, config
-    Sass::Engine.new(source, config).render
+  def render_sass source, path, config
+    css_string = Sass::Engine.new(source, {
+      :filename => path.to_s,
+      :load_paths => path.dirname
+    }.merge(config)).render
+    css_string.gsub!('"', '\"')
+    eval("\"#{css_string}\"")
   end
 
   def update_watched_mtime_cache path
